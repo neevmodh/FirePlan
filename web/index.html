@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#173c31">
+  <meta name="description" content="Import a CAD plan and optimize fire outlet placement in one simple workspace.">
+  <title>FirePlan · CAD optimizer</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><div class="brand"><span class="brand-icon" aria-hidden="true">f.</span><strong>fireplan</strong><span class="brand-divider"></span><span class="brand-detail">CAD OPTIMIZER</span></div><span class="top-note"><i></i>One plan. One workspace.</span></header>
+  <main>
+    <div class="page-title"><div><p class="eyebrow">FIRE PROTECTION · MADE SIMPLE</p><h1>A better plan starts here<span>.</span></h1><p class="intro">Import your CAD drawing, set the water limits, and find the best feasible outlet layout.</p></div><div class="method-label">Genetic algorithm <span>+ constraint penalties</span></div></div>
+    <div class="workspace-layout">
+      <section class="plan-panel" aria-labelledby="workspace-title">
+        <div class="panel-header"><div><div class="panel-caption">YOUR DRAWING</div><h2 id="workspace-title">Optimal plan workspace</h2></div><button type="button" id="import-button" class="import-button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 16v4h16v-4"/></svg><span>Import CAD</span></button><input type="file" id="cad-file" accept=".dxf" hidden></div>
+        <div class="drawing-meta"><span id="file-label">No drawing imported</span><span class="status" id="plan-status">WAITING FOR CAD</span></div>
+        <div class="plan-canvas" id="plan-canvas" aria-busy="false">
+          <div class="empty-state" id="empty-state"><div class="blueprint-icon" aria-hidden="true"><svg viewBox="0 0 80 80"><path d="M13 15h54v50H13zM13 39h30V15m0 24h24M43 39v26M13 54h16v11M51 65V51h16"/><path class="door" d="M29 39v-9a9 9 0 0 1 9 9M43 51h-9a9 9 0 0 0 9 9"/></svg></div><h3>Your plan, ready to optimize.</h3><p>Import a DXF drawing to see your facility<br>and place outlets on its pipe network.</p><button type="button" id="empty-import" class="empty-import">Choose a CAD file <span aria-hidden="true">↗</span></button><span class="file-hint">ASCII DXF · up to 4 MB</span></div>
+          <svg id="plan-svg" role="img" aria-label="Imported CAD and optimized outlet layout" hidden></svg>
+          <div id="canvas-note" class="canvas-note" hidden></div>
+        </div>
+        <div class="plan-footer"><div class="legend"><span><i class="outlet"></i>Selected outlet</span><span><i class="pipe"></i>Pipe</span><span><i class="supply"></i>Supply</span></div><span id="network-label">CAD coordinates · metres</span></div>
+        <div class="result-strip" aria-live="polite"><div><span>Risk coverage</span><strong id="metric-coverage">—<small>%</small></strong></div><div><span>Selected outlets</span><strong id="metric-outlets">—</strong></div><div><span>Lowest outlet pressure</span><strong id="metric-pressure">—<small>bar</small></strong><p id="pressure-check" class="pressure-check" hidden></p></div></div>
+      </section>
+      <aside class="setup-panel" aria-labelledby="setup-title"><div class="setup-header"><span class="step-number">01</span><div><div class="panel-caption">CONFIGURE ONCE</div><h2 id="setup-title">Optimal setup</h2></div></div>
+        <form id="setup-form">
+          <fieldset id="setup-fields"><legend class="sr-only">CAD and water settings</legend>
+            <div class="field full"><label for="budget">Maximum outlets <span>K</span></label><div class="input-unit"><input id="budget" type="number" min="1" max="80" value="8" required><span>outlets</span></div></div>
+            <div class="field-grid"><div class="field"><label for="source-pressure">Source pressure</label><div class="input-unit"><input id="source-pressure" type="number" min="0.1" max="30" step="0.1" value="6" required><span>bar</span></div></div><div class="field"><label for="min-pressure">Minimum pressure</label><div class="input-unit"><input id="min-pressure" type="number" min="0.1" max="20" step="0.1" value="3.5" required><span>bar</span></div></div></div>
+            <p class="pressure-help" id="pressure-help">Source pressure drives delivered pressure. Minimum pressure is the required outlet threshold; coverage radius stays fixed.</p>
+            <div class="field-grid"><div class="field"><label for="capacity">Supply capacity</label><div class="input-unit"><input id="capacity" type="number" min="0.1" max="2000" step="0.1" value="60" required><span>L/s</span></div></div><div class="field"><label for="demand">Outlet demand</label><div class="input-unit"><input id="demand" type="number" min="0.01" max="100" step="0.01" value="5" required><span>L/s</span></div></div></div>
+            <div class="field-grid"><div class="field"><label for="radius">Coverage radius</label><div class="input-unit"><input id="radius" type="number" min="0.1" max="200" step="0.1" value="35" required><span>m</span></div></div><div class="field"><label for="diameter">Pipe diameter</label><div class="input-unit"><input id="diameter" type="number" min="10" max="2000" step="1" value="100" required><span>mm</span></div></div></div>
+            <div class="cad-settings"><div class="field"><label for="cad-unit">Drawing units</label><select id="cad-unit"><option value="1">Metres</option><option value="0.001">Millimetres</option><option value="0.01">Centimetres</option><option value="0.3048">Feet</option></select></div><div class="field-grid"><div class="field"><label for="source-x">Supply X</label><input id="source-x" type="number" step="any" value="0" required></div><div class="field"><label for="source-y">Supply Y</label><input id="source-y" type="number" step="any" value="0" required></div></div><p>Marked pumps are detected automatically; edit X/Y to override.<br>Supports <code>PIPES</code>, <code>WATER_PIPES_MAIN/BRANCH</code>, risk polygons or labeled rooms. Convert DWG to DXF first.</p></div>
+          </fieldset>
+          <div class="error-message" id="error-message" role="alert" hidden></div>
+          <button id="optimize-button" class="optimize-button" type="submit" disabled><span>Optimize plan</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg></button>
+          <p class="run-message" id="run-message" role="status">Import a CAD drawing to begin.</p><div class="progress-track" id="progress-track" hidden><span id="progress-fill"></span></div>
+        </form>
+        <div class="setup-footnote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg><span>Genetic Algorithm + Hazen–Williams. Every returned layout meets the K limit, minimum pressure, and supply capacity.</span></div>
+      </aside>
+    </div>
+    <footer class="page-footer"><span>CMAI · FirePlan</span><span>Syllabus: Unit VI · Genetic Algorithms &nbsp;/&nbsp; Unit IV · Penalty Methods</span></footer>
+  </main>
+</body>
+</html>

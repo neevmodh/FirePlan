@@ -1,0 +1,2 @@
+# Preserve the original CAD bytes, including CRLF regression fixtures.
+*.dxf -text whitespace=cr-at-eol

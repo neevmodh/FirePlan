@@ -1,0 +1,22 @@
+[project]
+name = "cmai-fireplan"
+version = "0.2.0"
+description = "One-page CAD fire outlet optimizer with hydraulic constraints"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "wntr>=1.3,<2",
+  "deap>=1.4,<2",
+  "networkx>=3.3,<4",
+  "shapely>=2,<3",
+  "ezdxf>=1.3,<2",
+  "python-multipart>=0.0.18,<1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.27,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
