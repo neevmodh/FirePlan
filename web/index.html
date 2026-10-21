@@ -23,7 +23,7 @@
           <div id="canvas-note" class="canvas-note" hidden></div>
         </div>
         <div class="plan-footer"><div class="legend"><span><i class="outlet"></i>Selected outlet</span><span><i class="pipe"></i>Pipe</span><span><i class="supply"></i>Supply</span></div><span id="network-label">CAD coordinates · metres</span></div>
-        <div class="result-strip" aria-live="polite"><div><span>Risk coverage</span><strong id="metric-coverage">—<small>%</small></strong></div><div><span>Selected outlets</span><strong id="metric-outlets">—</strong></div><div><span>Lowest outlet pressure</span><strong id="metric-pressure">—<small>bar</small></strong><p id="pressure-check" class="pressure-check" hidden></p></div></div>
+        <div class="result-strip" aria-live="polite"><div><span>Risk coverage</span><strong id="metric-coverage">—<small>%</small></strong><p id="coverage-check" class="pressure-check" hidden></p></div><div><span>Selected outlets</span><strong id="metric-outlets">—</strong></div><div><span>Lowest outlet pressure</span><strong id="metric-pressure">—<small>bar</small></strong><p id="pressure-check" class="pressure-check" hidden></p></div></div>
       </section>
       <aside class="setup-panel" aria-labelledby="setup-title"><div class="setup-header"><span class="step-number">01</span><div><div class="panel-caption">CONFIGURE ONCE</div><h2 id="setup-title">Optimal setup</h2></div></div>
         <form id="setup-form">
@@ -39,7 +39,7 @@
           <button id="optimize-button" class="optimize-button" type="submit" disabled><span>Optimize plan</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6"/></svg></button>
           <p class="run-message" id="run-message" role="status">Import a CAD drawing to begin.</p><div class="progress-track" id="progress-track" hidden><span id="progress-fill"></span></div>
         </form>
-        <div class="setup-footnote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg><span>Genetic Algorithm + Hazen–Williams. Every returned layout meets the K limit, minimum pressure, and supply capacity.</span></div>
+        <div class="setup-footnote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg><span>Coverage follows your risk-zone boundaries. Every returned layout passes outlet, pressure, supply, and flow-balance checks.</span></div>
       </aside>
     </div>
     <footer class="page-footer"><span>CMAI · FirePlan</span><span>Syllabus: Unit VI · Genetic Algorithms &nbsp;/&nbsp; Unit IV · Penalty Methods</span></footer>

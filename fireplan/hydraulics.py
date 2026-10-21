@@ -5,6 +5,7 @@ import warnings
 
 import wntr
 from shapely.geometry import Point, Polygon
+from shapely.ops import unary_union
 
 from .models import Network, Settings
 
@@ -12,45 +13,53 @@ BAR_TO_METRES = 100000 / (1000 * 9.80665)
 
 
 class Coverage:
-    """Area-weighted midpoint quadrature, clipped to polygon interiors.
+    """Risk-weighted circle union clipped to actual zone boundaries.
 
-    Each zone is sampled on a 12x12 grid. Each covered sample contributes once
-    within that zone. Overlapping zone polygons remain separate risk layers.
+    Circles use inscribed 512-sided polygons (128 segments per quadrant).
+    A full circle's area underestimation is less than 0.00251%; narrow or
+    concave zones no longer depend on whether a sampling grid hits them.
     """
+    CIRCLE_SEGMENTS = 512
 
     def __init__(self, network: Network, radius_m: float):
-        self.zone_weights = {}
-        self.samples = []
-        for zone in network.zones:
-            polygon = Polygon(zone.polygon)
-            x0, y0, x1, y1 = polygon.bounds
-            points = [Point(x0 + (i + 0.5) * (x1 - x0) / 12,
-                            y0 + (j + 0.5) * (y1 - y0) / 12)
-                      for i in range(12) for j in range(12)]
-            points = [point for point in points if polygon.covers(point)]
-            if not points:
-                points = [polygon.representative_point()]
-            weight = polygon.area * zone.risk / len(points)
-            self.zone_weights[zone.id] = polygon.area * zone.risk
-            self.samples.extend((zone.id, point.x, point.y, weight) for point in points)
-        self.total = sum(self.zone_weights.values())
-        self.masks = {}
+        self.polygons = {z.id: Polygon(z.polygon) for z in network.zones}
+        self.risks = {z.id: z.risk for z in network.zones}
+        self.zone_weights = {z.id: self.polygons[z.id].area * z.risk for z in network.zones}
+        self.total = math.fsum(self.zone_weights.values())
+        self.footprints = {}
         for node in network.nodes:
             if node.candidate:
-                self.masks[node.id] = {i for i, (_, x, y, _) in enumerate(self.samples)
-                                       if math.hypot(x - node.x, y - node.y) <= radius_m}
+                disk = Point(node.x, node.y).buffer(radius_m, quad_segs=self.CIRCLE_SEGMENTS // 4)
+                self.footprints[node.id] = {key: polygon.intersection(disk)
+                                            for key, polygon in self.polygons.items()}
+        self.cache = {}
 
     def calculate(self, placements: tuple | list):
-        covered = set().union(*(self.masks[node] for node in placements)) if placements else set()
-        score = sum(self.samples[i][3] for i in covered)
-        by_zone = {}
-        for i in covered:
-            zone, _, _, weight = self.samples[i]
-            by_zone[zone] = by_zone.get(zone, 0) + weight
-        return {"weighted_score": score,
-                "coverage_pct": 100 * score / self.total if self.total else 0,
-                "zones": {zone: 100 * by_zone.get(zone, 0) / total if total else 0
-                          for zone, total in self.zone_weights.items()}}
+        key = tuple(sorted(set(placements)))
+        if key in self.cache:
+            return self.cache[key]
+        areas = {}
+        for zone, polygon in self.polygons.items():
+            pieces = [self.footprints[node][zone] for node in key
+                      if not self.footprints[node][zone].is_empty]
+            # A disk that covers the whole zone makes further unions unnecessary.
+            if any(piece.area >= polygon.area for piece in pieces):
+                area = polygon.area
+            else:
+                area = unary_union(pieces).area if pieces else 0.0
+            areas[zone] = min(polygon.area, max(0.0, area))
+        score = math.fsum(areas[zone] * self.risks[zone] for zone in areas)
+        result = {"weighted_score": score,
+                  "coverage_pct": min(100.0, max(0.0, 100 * score / self.total)) if self.total else 0.0,
+                  "zones": {zone: min(100.0, 100 * area / self.polygons[zone].area)
+                            for zone, area in areas.items()},
+                  "covered_area_m2": areas,
+                  "coverage_method": "Circle unions clipped to CAD risk polygons (512 segments per circle)"}
+        # Bound memoization even when greedy initialization explores many combinations.
+        if len(self.cache) >= 4096:
+            self.cache.clear()
+        self.cache[key] = result
+        return result
 
 
 def simulate(network: Network, settings: Settings, placements: list | tuple) -> dict:
@@ -68,11 +77,13 @@ def simulate(network: Network, settings: Settings, placements: list | tuple) -> 
     wn.add_reservoir(source.id, base_head=source.elevation_m + settings.source_pressure_bar * BAR_TO_METRES,
                      coordinates=(source.x, source.y))
     total_lps = 0
+    demands = {}
     for node in network.nodes:
         if node.id == source.id:
             continue
         demand = node.background_demand_lps + (settings.outlet_demand_lps if node.id in active else 0)
         total_lps += demand
+        demands[node.id] = demand
         wn.add_junction(node.id, base_demand=demand / 1000, elevation=node.elevation_m,
                         coordinates=(node.x, node.y))
     for pipe in network.pipes:
@@ -89,6 +100,16 @@ def simulate(network: Network, settings: Settings, placements: list | tuple) -> 
         flows = {str(pipe): float(flow) * 1000 for pipe, flow in result.link["flowrate"].iloc[0].items()}
         if not all(math.isfinite(value) for value in [*pressures.values(), *flows.values()]):
             raise ValueError("Nonfinite hydraulic solution")
+        if set(pressures) != {node.id for node in network.nodes} or set(flows) != {pipe.id for pipe in network.pipes}:
+            raise ValueError("Incomplete hydraulic solution")
+        net_inflow = {node.id: 0.0 for node in network.nodes}
+        for pipe in network.pipes:
+            net_inflow[pipe.start] -= flows[pipe.id]
+            net_inflow[pipe.end] += flows[pipe.id]
+        mass_error = max((abs(net_inflow[node] - demand) for node, demand in demands.items()), default=0.0)
+        source_error = abs(-net_inflow[source.id] - total_lps)
+        if max(mass_error, source_error) > 1e-5:
+            raise ValueError("Hydraulic flow continuity check failed")
         pressure_violation = sum(max(0, settings.min_pressure_bar - pressures[node]) for node in active)
         violations = []
         if len(active) > settings.max_outlets:
@@ -106,6 +127,9 @@ def simulate(network: Network, settings: Settings, placements: list | tuple) -> 
                 "flows_lps": flows, "total_demand_lps": total_lps,
                 "min_active_pressure_bar": min((pressures[n] for n in active), default=None),
                 "pressure_deficit_bar": pressure_violation,
+                "hydraulic_validation": {"max_junction_flow_error_lps": mass_error,
+                                         "source_flow_error_lps": source_error,
+                                         "flow_tolerance_lps": 1e-5},
                 "engine": "WNTRSimulator / Hazen–Williams / fixed demand"}
     except Exception as error:
         return {"feasible": False, "violations": ["hydraulic_solver_failure"], "pressures_bar": {},

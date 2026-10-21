@@ -40,16 +40,21 @@ class Search:
         self.best_attempt = None
         self.history = []
         self.step = 0
+        self.measure_limit = settings.evaluation_budget
+
+    @staticmethod
+    def quality(check):
+        return (check["weighted_score"], -len(check["placements"]),
+                check["min_active_pressure_bar"] if check["min_active_pressure_bar"] is not None else -float("inf"))
 
     def measure(self, bits):
         key = tuple(n for n, bit in zip(self.candidates, bits) if bit)
         if key not in self.cache:
-            if len(self.cache) >= self.settings.evaluation_budget:
+            if len(self.cache) >= self.measure_limit:
                 raise BudgetReached()
             check = evaluate(self.network, self.settings, list(key), self.coverage)
             self.cache[key] = check
-            if check["feasible"] and key and (self.best is None or
-                    (check["weighted_score"], -len(key)) > (self.best["weighted_score"], -len(self.best["placements"]))):
+            if check["feasible"] and key and (self.best is None or self.quality(check) > self.quality(self.best)):
                 self.best = check
             if key and (self.best_attempt is None or check["weighted_score"] > self.best_attempt["weighted_score"]):
                 self.best_attempt = check
@@ -134,11 +139,42 @@ def genetic_search(search: Search, seeds):
         search.record()
 
 
+def refine_layout(search: Search, solve_limit: int):
+    """Try feasible one-outlet removals, additions and swaps within the same budget."""
+    if search.best is None or solve_limit <= 0:
+        return 0
+    started = len(search.cache)
+    incumbent = search.best
+    active = set(incumbent["placements"])
+    optional = sorted(active - set(search.network.required_placements),
+                      key=lambda node: (incumbent["pressures_bar"][node], node))
+    unselected = sorted(set(search.candidates) - active,
+                        key=lambda node: (-search.coverage.calculate([node])["weighted_score"], node))
+    neighbours = ([active - {node} for node in optional] +
+                  ([active | {node} for node in unselected] if len(active) < search.limit else []) +
+                  [active - {old} | {new} for old in optional for new in unselected])
+    for neighbour in neighbours[:max(128, solve_limit * 4)]:
+        if len(search.cache) - started >= solve_limit:
+            break
+        ordered = [node for node in search.candidates if node in neighbour]
+        if not ordered or tuple(ordered) in search.cache:
+            continue
+        # Only neighbors that can improve the incumbent objective need a water solve.
+        score = search.coverage.calculate(ordered)["weighted_score"]
+        if score < search.best["weighted_score"] or (score == search.best["weighted_score"] and
+                                                      len(ordered) > len(search.best["placements"])):
+            continue
+        search.measure([int(node in neighbour) for node in search.candidates])
+    return len(search.cache) - started
+
+
 def optimize(network: Network, settings: Settings, progress: Callable | None = None) -> dict:
     """Search a penalized objective, retain and independently verify a feasible incumbent."""
     started = time.monotonic()
     search = Search(network, settings, progress)
     stop_reason = "iteration_limit"
+    refinement_evaluations = 0
+    reserve = min(32, settings.evaluation_budget // 5) if settings.evaluation_budget >= 64 else 0
     try:
         if len(search.required) > search.limit:
             # A search cannot discard mandatory reference outlets to fit the budget.
@@ -147,7 +183,15 @@ def optimize(network: Network, settings: Settings, progress: Callable | None = N
             search.measure(bits)
             raise BudgetReached()
         seeds = search.seed_layouts()
-        genetic_search(search, seeds)
+        search.measure_limit = settings.evaluation_budget - reserve
+        try:
+            genetic_search(search, seeds)
+        except BudgetReached:
+            stop_reason = "ga_evaluation_limit"
+        search.measure_limit = settings.evaluation_budget
+        refinement_evaluations = refine_layout(search, reserve)
+        if len(search.cache) >= settings.evaluation_budget:
+            stop_reason = "evaluation_budget"
     except BudgetReached:
         if stop_reason != "mandatory_outlet_budget":
             stop_reason = "evaluation_budget"
@@ -163,13 +207,14 @@ def optimize(network: Network, settings: Settings, progress: Callable | None = N
         "history": search.history, "evaluated_layouts": len(search.cache),
         "feasible_layouts": sum(c["feasible"] and bool(c["placements"]) for c in search.cache.values()),
         "elapsed_seconds": round(time.monotonic() - started, 3), "stop_reason": stop_reason,
+        "refinement_evaluations": refinement_evaluations,
         "algorithm_id": settings.algorithm, "algorithm": ALGORITHMS[settings.algorithm] + " + WNTR hydraulic verification",
         "search_samples": samples,
-        "optimality": "Best feasible layout found; global optimality is not certified.",
+        "optimality": "Best feasible layout found with bounded outlet refinement; global optimality is not certified.",
         "settings": settings.model_dump(), "network": network.model_dump(),
         "assumptions": ["Constant source pressure; supply flow capacity enforced separately.",
             "All selected outlets operate simultaneously at fixed demand.",
-            "Coverage uses a Euclidean-radius proxy on a 12 × 12 grid per zone; walls and hose routing are not modeled.",
+            "Coverage uses unions of 512-sided circles clipped to CAD risk polygons; walls and hose routing are not modeled.",
             "Pressure threshold is a user-supplied design input, not code certification.",
             "Risk layers are area-weighted; overlapping zone polygons represent additive risk layers.",
             "Steady state at t=0; transient behavior and real pump curves are not modeled.",

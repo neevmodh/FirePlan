@@ -2,12 +2,12 @@
 
 The project now has one page with CAD import, one optimal setup, and a plan workspace. It applies two syllabus topics: **Genetic Algorithms (Unit VI)** and **constrained optimization using quadratic penalties (Unit IV)**.
 
-The outer GA selects binary outlet placements; the inner WNTR hydraulic solver checks fixed simultaneous demand, flow continuity, pressure loss, and source capacity. The objective maximizes sampled area-weighted risk coverage without duplicate credit for overlapping outlets within a zone. Every returned layout must pass hard hydraulic and count constraints and a fresh final solve.
+The outer GA selects binary outlet placements; the inner WNTR hydraulic solver checks fixed simultaneous demand, flow continuity, pressure loss, and source capacity. The objective maximizes risk-weighted circle-union area clipped to CAD polygons without duplicate credit for overlapping outlets within a zone. Every returned layout must pass hard hydraulic and count constraints and a fresh final solve with independent flow-continuity checks.
 
 ```text
 DXF → validated pipe graph + risk polygons + CAD context
     → GA + normalized quadratic penalties
-    → independently checked feasible layout
+    → bounded outlet refinement → independently checked feasible layout
     → one SVG workspace
 ```
 

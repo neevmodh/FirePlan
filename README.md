@@ -45,12 +45,12 @@ The page stores its drawing and result in browser memory. Reloading starts a fre
 
 | Field | What it means | How it affects the result |
 | --- | --- | --- |
-| **Maximum outlets K** | The maximum number of selected sprinklers/hydrants. It is a count limit, not a money amount. | With K=8, a returned layout may contain 1–8 outlets. Increasing K gives the search more placement options, but water constraints may still prevent using all slots. Equal-coverage layouts prefer fewer outlets. |
+| **Maximum outlets K** | The maximum number of selected sprinklers/hydrants. It is a count limit, not a money amount. | With K=8, a returned layout may contain 1–8 outlets. Increasing K gives the search more placement options, but water constraints may still prevent using all slots. K remains your entered ceiling when CAD or source coordinates change; fewer available candidates naturally limit the selection. Equal-coverage layouts prefer fewer outlets. |
 | **Source pressure — bar** | Pressure available where the water enters the modeled network, before downstream pipe losses. | Higher source pressure provides more pressure head in the simulation. Your DXF declares 7 bar at its pump; that annotation fills the input unless you manually override it. It is drawing data, not a measured supply test. |
 | **Minimum pressure — bar** | The lowest allowed pressure at every selected outlet while all selected outlets operate. | An outlet below the threshold makes the layout infeasible. With 3.5 bar entered, every selected outlet must retain at least 3.5 bar. A stricter threshold can reduce the feasible choices. |
 | **Supply capacity — L/s** | Maximum total water flow the source is allowed to supply simultaneously. | This is checked separately from pressure. With 60 L/s capacity, selected outlet demand plus any background demand must not exceed 60 L/s. A source can have sufficient pressure but insufficient flow capacity. |
 | **Outlet demand — L/s** | Fixed water flow required by each active outlet. The current model uses the same demand for every selected outlet. | Seven outlets at 5 L/s require 35 L/s before background demand. Increasing demand raises total flow and generally increases friction losses, making some layouts infeasible. Demand is not automatically reduced when pressure is low. |
-| **Coverage radius — m** | The modeled protection distance around a selected outlet. | The app draws a circle of this radius and credits risk samples inside it. A larger radius can protect more sampled area with fewer outlets. Coverage circles ignore walls and hose paths; this setting does not alter water demand directly. |
+| **Coverage radius — m** | The modeled protection distance around a selected outlet. | The app draws a circle of this radius and calculates its union with other selected circles, clipped to the actual risk polygons. A larger radius can protect more modeled area with fewer outlets. Coverage circles ignore walls and hose paths; this setting does not alter water demand directly. |
 | **Pipe diameter — mm** | The effective hydraulic diameter used for every pipe in this scenario. | Wider pipes generally lose less pressure at the same flow. The current single-page setup applies one diameter to all pipes; it does not infer different sizes from the drawing or optimize pipe upgrades. |
 | **Drawing units** | The physical length represented by one coordinate unit in the DXF. | This converts coordinates and pipe lengths into metres before simulation. A wrong selection changes the modeled building size, coverage distances, and friction losses. Choose the drawing's actual units. |
 | **Supply X** | Horizontal CAD coordinate of the source connection. | It locates where water enters the graph. It is a position, not a pressure or flow value. An automatic pump marker fills it; editing it requests a manual override. |
@@ -115,19 +115,19 @@ It does not mean every budget slot was used, a global optimum was mathematically
 
 ### Why 1.5 bar and 6.5 bar can produce the same layout
 
-**Source pressure** supplies hydraulic head. **Minimum pressure** is an acceptance threshold: every selected outlet must exceed it. Changing only the threshold does not physically change pressures in a fixed layout. The optimizer must change the placement if the old layout fails the new threshold and it finds a feasible alternative.
+**Source pressure** supplies hydraulic head. **Minimum pressure** is an acceptance threshold: every selected outlet must meet it. Changing only the threshold does not physically change pressures in a fixed layout. The optimizer must change the placement if the old layout fails the new threshold and it finds a feasible alternative.
 
 With your industrial drawing, the imported pump pressure is 7 bar. At a fixed 35 m coverage radius, K=8, capacity=60 L/s, demand=5 L/s, and diameter=100 mm, the default seeded GA produces:
 
 | Required minimum | Selected outlets | Lowest delivered pressure | Pressure margin | Risk coverage |
 | --- | ---: | ---: | ---: | ---: |
-| 1.5 bar | 7 | 6.682 bar | +5.182 bar | 100% |
-| 6.5 bar | 7, same positions | 6.682 bar | +0.182 bar | 100% |
-| 6.7 bar | 6 | 6.753 bar | +0.053 bar | 99.83% |
-| 6.9 bar | 4 | 6.902 bar | +0.002 bar | 82.92% |
+| 1.5 bar | 7 | 6.691 bar | +5.191 bar | 100% |
+| 6.5 bar | 7, same positions | 6.691 bar | +0.191 bar | 100% |
+| 6.7 bar | 6 | 6.753 bar | +0.053 bar | 99.62% |
+| 6.9 bar | 4 | 6.912 bar | +0.012 bar | 87.08% |
 | 7.1 bar | No feasible layout found | — | — | — |
 
-These are observed results for this drawing and the documented search defaults, not guaranteed global optima for every plan. The first two layouts match because 6.682 bar already satisfies both thresholds. The margin changes by exactly 5 bar. The former seven-outlet layout fails the 6.7 bar check, and the GA selects fewer outlets to reduce simultaneous demand and friction loss.
+These are observed results for this drawing and the documented search defaults, not guaranteed global optima for every plan. The first two layouts match because 6.691 bar already satisfies both thresholds. The margin changes by exactly 5 bar. The former seven-outlet layout fails the 6.7 bar check, and the GA selects fewer outlets to reduce simultaneous demand and friction loss.
 
 The website now distinguishes **Lowest outlet pressure** from the **Minimum pressure** input. It shows `Required … bar · margin +… bar`, explains an unchanged layout after a minimum-only edit, and highlights outlets within 0.05 bar of the required threshold in amber. Editing inputs clears the previous overlay and measurements; click **Optimize plan** to compute the new result. Unchanged placement does not mean an old result was reused: each optimization starts a new search and final hydraulic verification.
 
@@ -154,10 +154,10 @@ The tested search returned seven outlets:
 | --- | --- |
 | Count | 7 ≤ 8; one unused slot is allowed |
 | Flow | 7 × 5 = 35 L/s ≤ 60 L/s; 25 L/s capacity margin |
-| Pressure | Minimum active pressure approximately 6.68 bar ≥ 3.5 bar; approximately 3.18 bar pressure margin |
-| Coverage | 100% of the model's area-weighted risk samples are covered |
+| Pressure | Minimum active pressure approximately 6.69 bar ≥ 3.5 bar; approximately 3.19 bar pressure margin |
+| Coverage | 100% of the modeled risk-weighted polygon area is covered |
 
-Seven is allowed because K is a maximum, and equal-coverage results prefer fewer outlets. This observed layout is not proof that seven is the minimum possible number. The 100% figure applies to the declared risk samples and radius assumptions; it is not a probability of preventing every fire.
+Seven is allowed because K is a maximum, and equal-coverage results prefer fewer outlets. This observed layout is not proof that seven is the minimum possible number. The 100% figure applies to the declared risk polygons and radius assumptions; it is not a probability of preventing every fire.
 
 ## CAD requirements
 
@@ -194,7 +194,7 @@ Objective functions, feasible regions, and nonlinear/combinatorial formulation f
 CAD DXF → ezdxf + Shapely → validated NetworkX pipe graph
         → GA binary placement search (DEAP)
         → coverage + WNTR hydraulic simulation for each layout
-        → penalties + independently verified feasible incumbent
+        → penalties + bounded outlet refinement + verified feasible incumbent
         → one SVG plan workspace
 ```
 
@@ -205,7 +205,7 @@ FastAPI and Uvicorn serve the local app. Pydantic validates inputs. Plain HTML/C
 | `fireplan/ingestion.py` | DXF pipe/risk ingestion and straight CAD context |
 | `fireplan/models.py` | Numeric, graph, geometry and request validation |
 | `fireplan/hydraulics.py` | Coverage, WNTR simulation and constraints |
-| `fireplan/optimizer.py` | One GA with quadratic penalties and feasible-incumbent verification |
+| `fireplan/optimizer.py` | GA, bounded outlet swaps/removals/additions, quadratic penalties and final verification |
 | `fireplan/app.py` | Import and asynchronous optimization APIs |
 | `web/index.html`, `web/style.css`, `web/app.js` | Single-page interface |
 
@@ -223,7 +223,7 @@ FastAPI and Uvicorn serve the local app. Pydantic validates inputs. Plain HTML/C
 | Drawing units | Metres | Scale 1, 0.001, 0.01, or 0.3048 m per CAD unit |
 | Supply X/Y | Detected pump, or 0 / 0 fallback | Finite original CAD coordinates; manual values override detection |
 
-Fixed search defaults: GA population 28, generations 16, unique evaluation ceiling 250, λ=500, seed 42. The GA uses tournament size 3, crossover probability 0.8 with per-bit probability 0.5, mutation probability 0.6 with bit probability `max(1/N, 0.04)`, two elites, and one random immigrant per generation. Iteration limits can stop search before its ceiling. Final verification is an additional solve.
+Fixed search defaults: GA population 28, generations 16, unique evaluation ceiling 250, λ=500, seed 42. The GA uses tournament size 3, crossover probability 0.8 with per-bit probability 0.5, mutation probability 0.6 with bit probability `max(1/N, 0.04)`, two elites, and one random immigrant per generation. For budgets of at least 64, up to `min(32, floor(budget/5))` solves are reserved for bounded outlet refinement; the GA uses the remainder. The total unique-solve ceiling still applies to both stages together. At most 128 neighboring layouts are considered, and only candidates that can improve the retained objective need a hydraulic solve. Iteration limits can stop search before its ceiling. Final verification is an additional solve.
 
 ## Objective and constraints
 
@@ -284,16 +284,17 @@ The single-page optimizer uses **Genetic Algorithms from Unit VI** and **quadrat
 3. Calculate risk coverage and solve WNTR hydraulics for each new chromosome.
 4. Maximize `coverage_pct - lambda × sum(squared normalized positive violations)`. Pressure, flow-capacity, budget, nonnegative-pressure and required-outlet violations contribute penalties. Failed hydraulic solves receive an unusable score.
 5. Use tournament selection, uniform crossover, bit mutation, two elites and a random immigrant to form subsequent generations. Repair count and required-outlet constraints.
-6. Keep a separate best feasible incumbent. After the generation/evaluation limit, solve that layout again and return it only if every hard check passes.
+6. Keep a separate best feasible incumbent. Use the reserved solves to check outlet removals, additions, and swaps. Equal coverage prefers fewer outlets; equal coverage and count prefer higher minimum outlet pressure.
+7. Solve the retained layout again and independently check every junction’s flow balance and total source flow. Return it only if every hard check passes.
 
 Defaults are population 28, up to 16 generations, 250 unique search evaluations, lambda=500, and seed=42. Penalties guide exploration; they do not replace hard feasibility. The reported layout is the best feasible solution found within the search limits, not a certified global optimum.
 
 ### Complete placement model
 
-For candidate n, `y_n` is binary. A risk-area sample u is covered if any selected candidate lies within the radius. Its weight is zone area × zone risk / number of retained samples.
+For candidate n, `y_n` is binary. Each selected node defines a radius-r disk. The objective sums the area of each risk zone intersected by the union of selected disks, multiplied by that zone’s risk priority.
 
 ```text
-maximize       Σ_u w_u × covered_u
+maximize       Σ_z R_z × area(zone_z ∩ union of selected outlet disks)
 subject to     Σ_n y_n ≤ K
                required outlets remain selected, if supplied in a Network
                junction inflow − outflow = background demand + d × y_n
@@ -303,7 +304,9 @@ subject to     Σ_n y_n ≤ K
                valid finite hydraulic solution
 ```
 
-Coverage uses a 12×12 midpoint grid clipped to each polygon. Overlapping outlets count once within each zone; overlapping risk polygons are additive layers. Risk values are explicit priorities from 0 to 10, not calibrated probabilities.
+Coverage uses Shapely intersections and unions on the actual CAD polygons. Each disk is an inscribed 512-sided polygon (`quad_segs=128`); its full-circle area underestimation is below 0.00251%. This is a bound for a full disk, not a universal relative-error bound for every clipped sliver. Overlapping outlets count once within each zone; overlapping risk polygons remain additive layers. Thin and concave rooms no longer depend on grid sample locations. Risk values are explicit priorities from 0 to 10, not calibrated probabilities.
+
+The former 12×12 grid reported the old seven-outlet industrial layout as 100% covered; its polygon-area coverage is actually 99.88373%. The updated search selects different positions to achieve full modeled coverage. At a 6.9 bar minimum, bounded refinement improves the same GA result from 82.96132% to 87.07858% while retaining four outlets and satisfying pressure. These are observed results for the documented seeded example, not a general optimality guarantee.
 
 For a pipe with signed flow Q:
 
@@ -314,7 +317,7 @@ P_bar = (H − elevation) / 10.1972
 
 Head, length, diameter and elevation use metres internally; Q uses m³/s. API demands use L/s. WNTR applies its numerical formulation near zero flow. Pressure thresholds use bar. The source is a reservoir boundary with a separate flow ceiling, not a pump curve.
 
-Fitness is coverage percentage minus λ times the sum of squared normalized positive violations: active pressure deficit, capacity excess, count excess, negative junction pressure, and missing required outlets. Failed solves cannot pass. A separate feasible incumbent is retained and receives a fresh hydraulic check before return. Ties prefer fewer outlets.
+Fitness is coverage percentage minus λ times the sum of squared normalized positive violations: active pressure deficit, capacity excess, count excess, negative junction pressure, and missing required outlets. Failed solves cannot pass. A separate feasible incumbent is retained and receives a fresh hydraulic check before return. Ties prefer fewer outlets, then greater minimum delivered pressure.
 
 The UI displays **best feasible layout found**, not a proven global optimum. A failed bounded search reports no feasible layout found and never labels its best infeasible attempt as a valid plan.
 
@@ -334,13 +337,16 @@ Only one search runs at a time. Job records are in memory, capped at 20, pruned 
 
 ```sh
 uv run pytest -q
+node --test tests/test_frontend.mjs
 node --check web/app.js
 ```
 
-All 35 tests pass. Tests cover hydraulic equations/units, nonlinear changes with flow, diameter and roughness, continuity, coverage overlap, hard constraints even at low penalty weight, repeatability, graph/schema validation, DXF ingestion, architectural context, unsupported files, and the import-to-optimization flow. Pressure regressions distinguish source pressure from the acceptance threshold at a fixed coverage radius and verify the industrial drawing at minimum pressures of 1.5, 6.5, 6.7, 6.9, and 7.1 bar. Import checks cover Windows line endings, multiple pipe layers, marked candidates on pipe interiors, automatic/manual sources, labeled room risks, and off-pipe or ambiguous data rejection. The sample network helper is used by tests and is not loaded by the website.
+All **145 automated tests pass: 129 Python tests and 16 frontend logic tests**. The frontend suite uses isolated elements and mocked API responses; it does not access a live browser or verify rendered layout. Tests cover hydraulic equations/units, nonlinear changes with flow, diameter and roughness, continuity, coverage overlap, hard constraints even at low penalty weight, repeatability, graph/schema validation, DXF ingestion, architectural context, unsupported files, and the import-to-optimization flow. Pressure regressions distinguish source pressure from the acceptance threshold at a fixed coverage radius and verify the industrial drawing at minimum pressures of 1.5, 6.5, 6.7, 6.9, and 7.1 bar. Import checks cover Windows line endings, multiple pipe layers, marked candidates on pipe interiors, automatic/manual sources, labeled room risks, and off-pipe or ambiguous data rejection. The sample network helper is used by tests and is not loaded by the website.
+
+The extended suite adds exact pressure/capacity boundaries, an independent closed-form hydraulic reference, exhaustive placement comparisons on a small network, equivalent CAD imports in all four drawing units, an 18-case industrial settings sweep, an 80-candidate extreme-input check, injected solver failures, and concurrent-request/cancellation recovery. Browser checks exercise every setup control and confirm that edits clear stale results. Coverage percentages are bounded to 0–100 despite floating-point summation, and reimporting no longer silently reduces K. The accuracy suite additionally checks analytic circle/lens areas, tiny and concave regions, additive risk layers, finite-but-inconsistent solver outputs, local swaps, and pressure-margin tie breaking. See [TEST_REPORT.md](TEST_REPORT.md) for the test conditions, observed results, and limits.
 
 ## Model scope
 
 The model assumes steady-state fixed simultaneous demands, constant source head, explicit pipe/risk layers, and radius coverage. It does not model walls as coverage barriers, hose routes, actual pump curves, transient flow, occupancy-specific code rules, or inferred chemical risk. The minimum pressure is a design input, not statutory certification. Supply/risk data must be supplied and verified for engineering use.
 
-References: [WNTR hydraulics](https://usepa.github.io/WNTR/hydraulics.html), [WNTR units](https://usepa.github.io/WNTR/units.html), [DEAP tools](https://deap.readthedocs.io/en/master/api/tools.html).
+References: [Shapely circle buffering](https://shapely.readthedocs.io/en/stable/reference/shapely.buffer.html), [WNTR hydraulics](https://usepa.github.io/WNTR/hydraulics.html), [WNTR units](https://usepa.github.io/WNTR/units.html), [DEAP tools](https://deap.readthedocs.io/en/master/api/tools.html).

@@ -37,6 +37,8 @@ function getSettings() {
 function clearResult() {
   state.result = null;
   $('metric-coverage').innerHTML = '—<small>%</small>';
+  $('coverage-check').hidden = true;
+  $('coverage-check').textContent = '';
   $('metric-outlets').textContent = '—';
   $('metric-pressure').innerHTML = '—<small>bar</small>';
   $('pressure-check').hidden = true;
@@ -72,8 +74,8 @@ async function importCAD() {
     }
     if (imported?.suggested_source_pressure_bar != null && !state.pressureExplicit) $('source-pressure').value = imported.suggested_source_pressure_bar;
     state.cadDirty = false;
-    $('budget').max = Math.min(80, state.network.nodes.filter(node=>node.candidate).length);
-    if (number('budget') > Number($('budget').max)) $('budget').value = $('budget').max;
+    // K is the user's budget ceiling. Available CAD candidates limit selection,
+    // but reimporting or moving the source must not silently rewrite that budget.
     $('network-label').textContent = `${state.network.nodes.filter(node=>node.candidate).length} candidates · ${state.network.pipes.length} pipes`;
     $('run-message').textContent = 'Drawing imported. Your setup is ready.';
     clearResult();
@@ -104,7 +106,8 @@ function renderPlan() {
     const path=zone.polygon.map(point=>`${x(point[0])},${y(point[1])}`).join(' ');
     const relative=zone.risk/Math.max(...network.zones.map(z=>z.risk),.001);
     const color=relative>=.7?'#d4a47b':relative>=.4?'#b9bf8c':'#b1c7a1';
-    drawing+=`<polygon points="${path}" fill="${color}" fill-opacity=".10" stroke="${color}" stroke-opacity=".4" stroke-dasharray="4 4" stroke-width=".8"><title>${escapeHTML(zone.label)} · risk ${zone.risk}</title></polygon>`;
+    const zoneCoverage=solution?.zones[zone.id];
+    drawing+=`<polygon points="${path}" fill="${color}" fill-opacity=".10" stroke="${color}" stroke-opacity=".4" stroke-dasharray="4 4" stroke-width=".8"><title>${escapeHTML(zone.label)} · risk ${zone.risk}${zoneCoverage!==undefined?' · '+fmt(zoneCoverage,2)+'% of zone area covered':''}</title></polygon>`;
   }
   for (const [a,b] of network.drawing_lines||[]) drawing+=`<line x1="${x(a[0])}" y1="${y(a[1])}" x2="${x(b[0])}" y2="${y(b[1])}" stroke="#6b7970" stroke-width="1.7"/>`;
   for (const pipe of network.pipes) {
@@ -149,7 +152,12 @@ async function optimizePlan() {
         state.result=job.result;
         const solution=job.result.solution;
         if (solution) {
-          $('metric-coverage').innerHTML=fmt(solution.coverage_pct)+'<small>%</small>';
+          const coverage=solution.coverage_pct;
+          const coverageText=coverage===100?'100':coverage>99.99?'&gt;99.99':
+            coverage>0&&coverage<.01?'&lt;0.01':fmt(coverage,2);
+          $('metric-coverage').innerHTML=coverageText+'<small>%</small>';
+          $('coverage-check').hidden=false;
+          $('coverage-check').textContent='Zone area · overlaps counted once';
           $('metric-outlets').textContent=solution.placements.length;
           $('metric-pressure').innerHTML=fmt(solution.min_active_pressure_bar,2)+'<small>bar</small>';
           const required=job.result.settings.min_pressure_bar;
@@ -158,7 +166,7 @@ async function optimizePlan() {
           $('pressure-check').textContent=`Required ${fmt(required,2)} bar · margin ${margin>=0?'+':''}${fmt(margin,3)} bar`;
           $('pressure-check').classList.toggle('near-limit',margin<=.05);
           $('plan-status').textContent='FEASIBLE LAYOUT';$('plan-status').classList.add('ready');
-          $('canvas-note').hidden=false;$('canvas-note').textContent='Best feasible layout found · hydraulics verified';
+          $('canvas-note').hidden=false;$('canvas-note').textContent='Best feasible layout found · area + water checks passed';
           $('run-message').textContent='Plan optimized. All water and budget limits pass.';
           const previous=state.lastRun;
           const sameLayout=previous?.network===state.network &&
